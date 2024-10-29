@@ -1,0 +1,35 @@
+[build-system]
+requires = ["setuptools>=45", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "codedump"
+version = "0.1.0"
+description = "A tool to concatenate and dump code from a directory"
+authors = [
+    {name = "sdmat-dev", email = "smat-dev@users.noreply.github.com"},
+]
+readme = "README.md"
+requires-python = ">=3.6"
+license = {text = "MIT"}
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.6",
+    "Programming Language :: Python :: 3.7",
+    "Programming Language :: Python :: 3.8",
+    "Programming Language :: Python :: 3.9",
+]
+dependencies = [
+    "pyperclip",
+]
+
+[project.urls]
+Homepage = "https://github.com/smat-dev/codedump"
+Repository = "https://github.com/smat-dev/codedump"
+
+[project.scripts]
+codedump = "codedump.codedump:main" 
