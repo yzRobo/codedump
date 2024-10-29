@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "codedump"
-version = "0.1.0"
+version = "1.0.0"
 description = "A tool to concatenate and dump code from a directory"
 authors = [
     {name = "sdmat-dev", email = "smat-dev@users.noreply.github.com"},
