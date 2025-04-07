@@ -1,5 +1,11 @@
 # CodeDump
 
+**❗ This project has been superseded by [Jinni](https://github.com/smat-dev/jinni) ❗**
+
+Jinni offers an improved CLI experience and includes an MCP server for direct integration with AI assistants like Cursor, Roo, and Claude.
+
+---
+
 CodeDump is a simple Python tool that concatenates and dumps code from a directory, including file information such as size and last modified time.
 
 ## Installation
