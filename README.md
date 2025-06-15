@@ -27,6 +27,7 @@ CodeDump can be used from the command line:
 
     # Dump all code files from a specific directory
     codedump /path/to/directory
+    python codedump.py C:/Projects/universal-video-downloader
 
     # Only list file paths without content
     codedump -l
