@@ -16,19 +16,22 @@ Or clone this repository and run:
 
 CodeDump can be used from the command line:
 
-    # Dump all code files from current directory
+# Dump all code files from current directory
+
     codedump
 
-    # Dump all code files from a specific directory
+# Dump all code files from a specific directory
+
     codedump /path/to/directory
 
-    Example command:
+# Example command:
 
-    `python codedump.py C:\Projects\ProjectName`
+    python codedump.py C:\Projects\ProjectName
 
-    # Only list file paths without content
-    codedump -l
-    codedump --list-only
+# Only list file paths without content
+
+    python codedump.py -l
+    python codedump.py --list-only
 
 The tool will:
 1. Recursively scan the specified directory
