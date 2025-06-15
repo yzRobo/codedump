@@ -18,13 +18,9 @@ CodeDump can be used from the command line:
 
 ### Dump all code files from current directory
 
-    codedump
+    python codedump.py
 
 ### Dump all code files from a specific directory
-
-    codedump /path/to/directory
-
-### Example command:
 
     python codedump.py C:\Projects\ProjectName
 
