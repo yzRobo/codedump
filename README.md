@@ -1,112 +1,127 @@
 # CodeDump
 
-CodeDump is a simple Python CLI tool that scans a directory for code and configuration files and either:
+## Overview
 
-* **Concatenates** them into one annotated output (with size and last-modified metadata), or
-* **Splits** them into individual annotated files, preserving the directory structure.
+CodeDump is a utility for quickly exploring the contents of any source‑code directory. It can either:
 
-## Installation
+* **Concatenate** every relevant text file into one annotated dump (handy for rapid reviews, AI prompts, or archiving), or
+* **Split** each file into its own annotated copy inside an *extracted* folder.
 
-To install CodeDump, run:
+A lightweight **Tk GUI** is included for non‑command‑line users, and a batch script can bundle everything into a single Windows executable so that end‑users do **not** need to install Python.
+
+---
+
+## Feature Summary
+
+| Capability            | Details                                                                                                                                                                                                                                          |
+| --------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Concatenate           | Combines all allowed files into one document, with 80‑char separators and file metadata headers. Output is displayed in the GUI, copied to the clipboard, **and** written to `code_dump_YYYYMMDD_HHMMSS.txt` inside the chosen output directory. |
+| Split                 | Writes each file’s annotated copy under `extracted/` (default) or any directory you choose.                                                                                                                                                      |
+| Flatten               | `--flatten` (GUI checkbox “Flatten output”) places every split file directly in the output folder, disambiguating duplicate basenames with `_1`, `_2`, …                                                                                         |
+| List‑only             | Quickly show just the relative paths that would be processed.                                                                                                                                                                                    |
+| Smart skip logic      | Ignores binary files, build artefacts, dependency folders (`node_modules`, `__pycache__`, `.git`, etc.), and common log/backup extensions.                                                                                                       |
+| Binary / NUL safety   | Files whose first 4 KB contain a `\x00` byte are treated as binary and skipped. Any stray `\x00` chars that remain are stripped during read.                                                                                                     |
+| Clipboard integration | Concatenate output is automatically copied to the clipboard (falls back gracefully if unavailable).                                                                                                                                              |
+| One‑file EXE builder  | `build_codedump.bat` uses PyInstaller to create `CodeDump_vX.Y.Z.exe` (GUI, no console).                                                                                                                                                         |
+
+---
+
+## Quick Start (Python users)
 
 ```bash
-pip install codedump
+# 1. Clone or download the project
+# 2. Create a virtual environment (recommended)
+python -m venv venv
+.\venv\Scripts\activate   # PowerShell / CMD on Windows
+# 3. Install runtime dependency
+pip install pyperclip
+
+# 4. Run the GUI
+python codedump_gui.py
+
+# 5. Or use the CLI
+python codedump.py path/to/project --split --flatten --output-dir my_dump
 ```
 
-Or clone this repository and install locally:
+> **Note:** The only runtime dependency is `pyperclip` (used for clipboard operations). `tkinter` ships with the standard CPython installer on Windows, macOS and most Linux distros.
+
+---
+
+## GUI Usage
+
+1. **Source Directory** – browse to the folder you want to scan.
+2. *(Optional)* enable **List only**, **Split files**, or **Flatten output**.
+3. **Output Directory** – set where TXT or split files should go (always active).
+4. Click **Run**.
+
+* In *concatenate* mode you will see the dump in the log pane and a file such as `code_dump_20250616_161530.txt` will be saved in the output directory.
+* In *split* mode the files appear under `extracted/` (or the directory you set). The GUI log lists progress.
+
+---
+
+## Command‑Line Options
+
+```text
+usage: codedump.py [directory] [options]
+
+options:
+  -l, --list-only          list file paths only
+  -s, --split              write each file to its own annotated copy
+  -F, --flatten            (with --split) place all files directly in output dir
+      --output-dir DIR     destination for split files or dump txt (default: extracted/)
+```
+
+Examples:
 
 ```bash
-git clone https://github.com/yourusername/codedump.git
-cd codedump
-pip install .
+# Concatenate a repo and open the result in VS Code
+python codedump.py . > dump.txt && code dump.txt
+
+# Split & flatten into one folder
+python codedump.py ../legacy --split -F --output-dir legacy_flat
 ```
 
-## Usage
+---
 
-```bash
-python codedump.py [directory] [options]
+## Building a Stand‑Alone Windows Executable
+
+1. Ensure you have a **64‑bit Python 3.10+** and a **virtual environment** called `venv` (any folder name is fine but the batch file assumes `venv`).
+2. Activate the venv and install build dependencies:
+
+```powershell
+python -m venv venv
+.\venv\Scripts\activate
+pip install pyinstaller pyperclip
 ```
 
-* `directory` (optional): Path to process (default: current directory).
+3. Run the batch script:
 
-### Options
+```powershell
+build_codedump.bat
+```
 
-* `-l, --list-only`
-  Only list matching file paths without content.
+4. When prompted, enter a version like `1.0.0`. On success you’ll find `dist\CodeDump_v1.0.0.exe` – distribute that **single file**.
 
-* `-s, --split`
-  Instead of one big output, write each file into its own annotated file.
+---
 
-* `--output-dir DIR`
-  Root folder in which to place split files (default: `extracted/`).
+## Development Notes
 
-### Examples
+* **Skip logic** is defined in `should_skip()` (in `codedump.py`). Edit the allowed‑extension and skip lists there if you need to support additional file types.
+* Binary detection occurs in `_looks_binary()`; adjust the `sniff` byte count if necessary.
+* The GUI is plain Tkinter (`codedump_gui.py`) – easy to extend with additional switches.
+* The project is entirely cross‑platform for CLI usage; the EXE build is Windows‑only because it uses PyInstaller’s `--onefile` option.
 
-* **Dump all code from the current directory**
+---
 
-  ```bash
-  python codedump.py
-  ```
+## License
 
-* **Dump all code from a specific directory**
+MIT License – see `LICENSE` file for full text.
 
-  ```bash
-  python codedump.py C:\Projects\MyProject
-  ```
+---
 
-* **List file paths only**
+## Acknowledgements
 
-  ```bash
-  python codedump.py --list-only
-
-  python codedump.py C:\Projects\MyProject --list-only
-  ```
-
-* **Split into individual annotated files under `extracted/`**
-
-  ```bash
-  python codedump.py --split
-
-  python codedump.py C:\Projects\MyProject --split
-  ```
-
-* **Split into a custom folder**
-
-  ```bash
-  python codedump.py --split --output-dir my_dump
-
-  python codedump.py C:\Projects\MyProject --split --output-dir my_dump
-  ```
-
-## What It Does
-
-* **Default mode**
-
-  1. Recursively scans the specified directory.
-  2. Finds all code and config files (see “Supported Files” below).
-  3. Outputs their contents with headers showing:
-
-     * File path
-     * File size in bytes
-     * Last modified timestamp
-  4. Copies the combined output to your clipboard.
-
-* **Split mode**
-
-  1. Recursively scans the specified directory.
-  2. Finds the same set of files.
-  3. For each file, writes a separate annotated file under `--output-dir`, preserving its relative path.
-
-## Supported Files & Filters
-
-By default, CodeDump looks for a wide range of source, script, config, and markup extensions (e.g. `.py`, `.js`, `.ts`, `.java`, `.html`, `.md`, `.yaml`, etc.) and also a whitelist of filenames without extensions (e.g. `README`, `Dockerfile`, `package.json`, etc.).
-
-It automatically **skips**:
-
-* Binary files
-* Build and distribution directories (`build/`, `dist/`, `target/`, `.next/`, etc.)
-* Cache and virtual-env folders (`__pycache__/`, `node_modules/`, `venv/`, etc.)
-* Version control metadata (`.git/`, `.svn/`, etc.)
-* Log, temp, backup files (`*.log`, `*.tmp`, `*.bak`, swap files, etc.)
-
-Feel free to tweak the whitelists and skip-lists in your copy of `should_skip()`.
+* PyInstaller for bundling.
+* Pyperclip for painless clipboard access.
+* The Python Standard Library (tkinter, argparse, datetime, etc.).
+* smat-dev on Github (the creator of the original project this was forked from)

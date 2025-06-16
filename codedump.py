@@ -1,305 +1,338 @@
+#!/usr/bin/env python3
+"""
+codedump.py  –  Concatenate or split source files, with options:
+
+  -l / --list-only   Only list file paths
+  -s / --split       Write each file (with header) to its own text file
+  -F / --flatten     (with --split) put all output files in one folder
+  --output-dir DIR   Destination for split or dump file (default: extracted/)
+
+NEW IN THIS VERSION
+───────────────────────────────────────────────────────────────────────────────
+• Binary-file sniffing:  any file whose first 4 KB contains a NUL (0x00) byte
+  is treated as binary and skipped (reported in output).
+• Residual “\x00” chars are stripped from all text reads.
+"""
+
+# ─── Imports ──────────────────────────────────────────────────────────────────
 import os
-import datetime
-import pyperclip
 import re
 import sys
 import argparse
+import datetime
+import pyperclip
+from collections import defaultdict
 
+# ─── General helpers ──────────────────────────────────────────────────────────
 def get_file_info(file_path):
-    """Get file information including size and last modified time."""
+    """Return size and mtime (as yyyy-mm-dd HH:MM:SS) for *file_path*."""
     try:
-        stats = os.stat(file_path)
+        s = os.stat(file_path)
         return {
-            'size': stats.st_size,
-            'last_modified': datetime.datetime.fromtimestamp(stats.st_mtime).strftime('%Y-%m-%d %H:%M:%S')
+            "size": s.st_size,
+            "last_modified": datetime.datetime.fromtimestamp(s.st_mtime)
+            .strftime("%Y-%m-%d %H:%M:%S"),
         }
     except FileNotFoundError:
-        return {
-            'size': 'N/A',
-            'last_modified': 'N/A'
-        }
+        return {"size": "N/A", "last_modified": "N/A"}
 
-def should_skip(path):
-    """Check if the file or directory should be skipped."""
-    # List of allowed extensions
-    allowed_extensions = {
-        # General
-        '.txt', '.md', '.markdown', '.json', '.xml', '.yaml', '.yml', '.toml',
-        '.ini', '.cfg', '.conf', '.sql', '.graphql', '.proto',
-        # Python
-        '.py', '.pyx', '.pyd', '.pyo', '.pyc', '.pyw', '.pyi',
-        # C and C++
-        '.c', '.h', '.i', '.cpp', '.hpp', '.cc', '.hh', '.cxx', '.hxx',
-        # Julia
-        '.jl',
-        # JavaScript and TypeScript
-        '.js', '.jsx', '.ts', '.tsx', '.mjs', '.cjs',
-        # Web
-        '.html', '.htm', '.css', '.scss', '.sass', '.less',
-        # Java and JVM languages
-        '.java', '.kt', '.kts', '.groovy', '.scala', '.clj', '.cljs',
-        # .NET languages
-        '.cs', '.fs', '.vb',
-        # Ruby
-        '.rb', '.rake', '.gemspec',
-        # PHP
-        '.php', '.phtml', '.php3', '.php4', '.php5', '.phps',
-        # Go
-        '.go',
-        # Rust
-        '.rs',
-        # Swift
-        '.swift',
-        # Shell scripting
-        '.sh', '.bash', '.zsh', '.fish',
-        # PowerShell
-        '.ps1', '.psm1', '.psd1',
-        # Perl
-        '.pl', '.pm',
-        # Lua
-        '.lua',
-        # Haskell
-        '.hs', '.lhs',
-        # R
-        '.r', '.R', '.Rmd',
-        # Dart
-        '.dart',
-        # Kotlin
-        '.kt', '.kts',
-        # Objective-C
-        '.m', '.mm',
-        # Elm
-        '.elm',
-        # F#
-        '.fs', '.fsi', '.fsx',
-        # Elixir
-        '.ex', '.exs',
-        # Erlang
-        '.erl', '.hrl',
-        # Lisp dialects
-        '.lisp', '.cl', '.el',
-        # Fortran
-        '.f', '.for', '.f90', '.f95', '.f03', '.f08',
-        # MATLAB/Octave
-        '.m', '.mat',
-        # Scala
-        '.scala', '.sc',
-        # Terraform
-        '.tf', '.tfvars',
-        # Ansible
-        '.yml', '.yaml',
-        # LaTeX
-        '.tex', '.sty', '.cls',
-    }
 
-    # List of allowed filenames without extensions
-    allowed_filenames = {
-        # General
-        'readme', 'license', 'dockerfile', 'makefile', '.gitignore', '.dockerignore',
-        '.editorconfig', '.env', 'requirements.txt', 'package.json', 'tsconfig.json',
-        # Python
-        'setup.py', 'setup.cfg', 'pyproject.toml', 'pipfile', 'manifest.in',
-        '.pylintrc', '.flake8', 'pytest.ini', 'tox.ini',
-        # C/C++
-        'makefile', 'cmakelist.txt', 'cmakelists.txt',
-        # Julia
-        'project.toml', 'manifest.toml', 'juliaconfig.toml',
-        # JavaScript/TypeScript
-        '.npmignore', '.babelrc', '.eslintrc', '.prettierrc',
-        'tslint.json', 'webpack.config.js', 'yarn.lock',
-        # Ruby
-        'gemfile', 'rakefile',
-        # PHP
-        'composer.json', 'composer.lock',
-        # Go
-        'go.mod', 'go.sum',
-        # Rust
-        'cargo.toml', 'cargo.lock',
-        # .NET
-        'packages.config', 'nuget.config',
-        # Java
-        'pom.xml', 'build.gradle', 'build.gradle.kts', 'settings.gradle', 'settings.gradle.kts',
-        # Docker
-        'docker-compose.yml', 'docker-compose.yaml',
-        # Git
-        '.gitattributes',
-        # CI/CD
-        '.travis.yml', '.gitlab-ci.yml', 'jenkins.file', 'azure-pipelines.yml',
-        # Editor/IDE
-        '.vscode', '.idea',
-        # Elm
-        'elm.json',
-        # F#
-        'paket.dependencies', 'paket.lock',
-        # Elixir
-        'mix.exs', 'mix.lock',
-        # Erlang
-        'rebar.config',
-        # MATLAB/Octave
-        '.octaverc',
-        # Scala
-        'build.sbt',
-        # Terraform
-        '.terraform.lock.hcl',
-        # Ansible
-        'ansible.cfg', 'hosts',
-        # LaTeX
-        'latexmkrc',
-    }
-
-    # Directories to skip
-    skip_directories = {
-        '__pycache__', 'node_modules', 'venv', 'env', '.venv', '.env',
-        'build', 'dist', 'target', 'out', 'bin', 'obj',
-        '.git', '.svn', '.hg',  # Version control directories
-        '.idea', '.vscode',  # IDE directories
-        'logs',  # Log directories
-        'output',  # Output directories
-        '.next', # ADDED: Directory for Next.js builds
-    }
-
-    # A new set for specific filenames to skip
-    skip_filenames = {
-        'package-lock.json',
-    }
-
-    # Regex patterns for directories to skip
-    skip_directory_patterns = [
-        r'\.egg-info$',  # Matches directories ending with .egg-info
-    ]
-
-    # Regex patterns for files to skip
-    skip_patterns = [
-        r'\.log(\.[0-9]+)?$',  # Matches .log, .log.1, .log.2, etc.
-        r'^log\.',  # Matches log.txt, log.old, etc.
-        r'\.bak$',
-        r'\.tmp$',
-        r'\.temp$',
-        r'\.swp$',
-        r'~$',
-    ]
-
-    # First, check if any part of the path is a directory that should be skipped.
+# ─── Binary / NUL-clean helpers ───────────────────────────────────────────────
+def _looks_binary(path, sniff=4096):
+    """
+    Very quick heuristic: read up to *sniff* bytes and
+    return True if a NUL byte is present → likely binary.
+    """
     try:
-        path_parts = set(os.path.normpath(path).split(os.sep))
-        if not path_parts.isdisjoint(skip_directories):
+        with open(path, "rb") as fh:
+            chunk = fh.read(sniff)
+        return b"\x00" in chunk
+    except Exception:
+        return False  # On I/O problems treat as text – caller will handle.
+
+
+def _read_text(path):
+    """
+    Read *path* as text; remove any 0x00 bytes.
+
+    • Try UTF-8 first; on failure fall back to latin-1 (ignore errors).
+    • Strip all NUL characters so they never reach the output/log/clipboard.
+    """
+    try:
+        with open(path, "rb") as fh:
+            raw = fh.read()
+        try:
+            txt = raw.decode("utf-8")
+        except UnicodeDecodeError:
+            txt = raw.decode("latin-1", "ignore")
+        return txt.replace("\x00", "")
+    except Exception as exc:
+        return f"[ERROR reading file: {exc}]"
+
+
+# ─── Skip-logic (unchanged from earlier) ──────────────────────────────────────
+def should_skip(path):
+    """Return True if *path* (file or dir) should be excluded."""
+    # — Allowed extensions / filenames / skip lists (same as previous version) —
+    allowed_extensions = {
+        # General text / data
+        ".txt", ".md", ".markdown", ".json", ".xml", ".yaml", ".yml", ".toml",
+        ".ini", ".cfg", ".conf", ".sql", ".graphql", ".proto",
+        # Python
+        ".py", ".pyx", ".pyd", ".pyo", ".pyc", ".pyw", ".pyi",
+        # C / C++
+        ".c", ".h", ".i", ".cpp", ".hpp", ".cc", ".hh", ".cxx", ".hxx",
+        # Julia
+        ".jl",
+        # JavaScript / TypeScript
+        ".js", ".jsx", ".ts", ".tsx", ".mjs", ".cjs",
+        # Web
+        ".html", ".htm", ".css", ".scss", ".sass", ".less",
+        # Java & JVM
+        ".java", ".kt", ".kts", ".groovy", ".scala", ".clj", ".cljs",
+        # .NET
+        ".cs", ".fs", ".vb",
+        # Ruby
+        ".rb", ".rake", ".gemspec",
+        # PHP
+        ".php", ".phtml", ".php3", ".php4", ".php5", ".phps",
+        # Go
+        ".go",
+        # Rust
+        ".rs",
+        # Swift
+        ".swift",
+        # Shell
+        ".sh", ".bash", ".zsh", ".fish",
+        # PowerShell
+        ".ps1", ".psm1", ".psd1",
+        # Perl
+        ".pl", ".pm",
+        # Lua
+        ".lua",
+        # Haskell
+        ".hs", ".lhs",
+        # R
+        ".r", ".R", ".Rmd",
+        # Dart
+        ".dart",
+        # Kotlin
+        ".kt", ".kts",
+        # Objective-C
+        ".m", ".mm",
+        # Elm
+        ".elm",
+        # F#
+        ".fs", ".fsi", ".fsx",
+        # Elixir
+        ".ex", ".exs",
+        # Erlang
+        ".erl", ".hrl",
+        # Lisp
+        ".lisp", ".cl", ".el",
+        # Fortran
+        ".f", ".for", ".f90", ".f95", ".f03", ".f08",
+        # MATLAB / Octave
+        ".m", ".mat",
+        # Scala
+        ".scala", ".sc",
+        # Terraform
+        ".tf", ".tfvars",
+        # LaTeX
+        ".tex", ".sty", ".cls",
+    }
+
+    allowed_filenames = {
+        "readme", "license", "dockerfile", "makefile", ".gitignore",
+        ".dockerignore", ".editorconfig", ".env", "requirements.txt",
+        "package.json", "tsconfig.json",
+        "setup.py", "setup.cfg", "pyproject.toml", "pipfile", "manifest.in",
+        ".pylintrc", ".flake8", "pytest.ini", "tox.ini",
+        "cmakelist.txt", "cmakelists.txt",
+        "project.toml", "manifest.toml", "juliaconfig.toml",
+        ".npmignore", ".babelrc", ".eslintrc", ".prettierrc", "tslint.json",
+        "webpack.config.js", "yarn.lock",
+        "gemfile", "rakefile",
+        "composer.json", "composer.lock",
+        "go.mod", "go.sum",
+        "cargo.toml", "cargo.lock",
+        "packages.config", "nuget.config",
+        "pom.xml", "build.gradle", "build.gradle.kts",
+        "settings.gradle", "settings.gradle.kts",
+        "docker-compose.yml", "docker-compose.yaml",
+        ".gitattributes",
+        ".travis.yml", ".gitlab-ci.yml", "jenkins.file", "azure-pipelines.yml",
+        ".vscode", ".idea",
+        "elm.json",
+        "paket.dependencies", "paket.lock",
+        "mix.exs", "mix.lock",
+        "rebar.config",
+        ".octaverc",
+        "build.sbt",
+        ".terraform.lock.hcl",
+        "ansible.cfg", "hosts",
+        "latexmkrc",
+    }
+
+    skip_directories = {
+        "__pycache__", "node_modules", "venv", "env", ".venv", ".env",
+        "build", "dist", "target", "out", "bin", "obj",
+        ".git", ".svn", ".hg",
+        ".idea", ".vscode",
+        "logs", "output",
+        ".next",
+    }
+
+    skip_filenames = {"package-lock.json"}
+
+    skip_dir_patterns = [r"\.egg-info$"]
+    skip_file_patterns = [
+        r"\.log(\.[0-9]+)?$", r"^log\.", r"\.bak$", r"\.tmp$",
+        r"\.temp$", r"\.swp$", r"~$",
+    ]
+
+    # Fast dir-level check
+    try:
+        if set(os.path.normpath(path).split(os.sep)) & skip_directories:
             return True
     except Exception:
         pass
 
     name = os.path.basename(path)
     name_lower = name.lower()
-    _, extension = os.path.splitext(name)
+    _, ext = os.path.splitext(name)
 
-    # Check directories against regex patterns
     if os.path.isdir(path):
-        return any(re.search(pattern, name) for pattern in skip_directory_patterns)
+        return any(re.search(p, name) for p in skip_dir_patterns)
 
-    # Check if the filename is in the explicit skip list
     if name_lower in skip_filenames:
         return True
-
-    # Check if the file matches any general skip patterns
-    if any(re.search(pattern, name_lower) for pattern in skip_patterns):
+    if any(re.search(p, name_lower) for p in skip_file_patterns):
         return True
 
-    # Final check based on allowed extensions and filenames
     return (
-        (name.startswith('.') and name_lower not in allowed_filenames) or
-        (extension.lower() not in allowed_extensions and name_lower not in allowed_filenames)
+        (name.startswith(".") and name_lower not in allowed_filenames)
+        or (ext.lower() not in allowed_extensions
+            and name_lower not in allowed_filenames)
     )
 
-def concatenate_files(directory='.', list_only=False):
-    """Recursively concatenate all files in the directory and subdirectories with annotations and return as a string."""
+
+# ─── Core operations ──────────────────────────────────────────────────────────
+def concatenate_files(directory=".", list_only=False):
+    """Return concatenation (or listing) of all relevant files."""
     output = []
     for root, dirs, files in os.walk(directory, topdown=True):
-        # Prune the directories to search. This is the most efficient way.
         dirs[:] = [d for d in dirs if not should_skip(os.path.join(root, d))]
-
         for file in files:
-            file_path = os.path.join(root, file)
-            # This check is now redundant if directory pruning is perfect, but acts as a good failsafe.
-            if should_skip(file_path):
+            fp = os.path.join(root, file)
+            if should_skip(fp):
                 continue
 
-            file_info = get_file_info(file_path)
+            info = get_file_info(fp)
 
             if list_only:
-                output.append(f"{file_path}")
+                output.append(fp)
             else:
-                output.append(f"\n\n{'=' * 80}")
-                output.append(f"File: {file_path}")
-                output.append(f"Size: {file_info['size']} bytes")
-                output.append(f"Last Modified: {file_info['last_modified']}")
-                output.append('=' * 80 + '\n')
+                output.append("\n" + "=" * 80)
+                output.append(f"File: {fp}")
+                output.append(f"Size: {info['size']} bytes")
+                output.append(f"Last Modified: {info['last_modified']}")
+                output.append("=" * 80 + "\n")
 
-                try:
-                    with open(file_path, 'r', encoding='utf-8', errors='ignore') as f:
-                        content = f.read()
-                        output.append(content)
-                except Exception as e:
-                    output.append(f"Error reading file: {str(e)}")
+                if _looks_binary(fp):
+                    output.append("[binary file skipped]\n")
+                else:
+                    output.append(_read_text(fp))
 
-    return '\n'.join(output)
+    return "\n".join(output)
 
-def split_files(directory='.', output_dir='extracted'):
-    """Recursively write each relevant file into its own annotated file."""
+
+def split_files(directory=".", output_dir="extracted", *, flatten=False):
+    """
+    Write each relevant file into its own annotated file.
+
+    • If *flatten* is True, every file goes directly in *output_dir*.
+      Duplicate basenames receive suffixes _1, _2, …
+    """
+    dup_counter: defaultdict[str, int] = defaultdict(int)
+
     for root, dirs, files in os.walk(directory, topdown=True):
         dirs[:] = [d for d in dirs if not should_skip(os.path.join(root, d))]
-
         for file in files:
-            src_path = os.path.join(root, file)
-            if should_skip(src_path):
+            src = os.path.join(root, file)
+            if should_skip(src):
                 continue
 
-            # Build annotated header + content
-            info = get_file_info(src_path)
+            info = get_file_info(src)
             header = (
-                f"{'=' * 80}\n"
-                f"File: {src_path}\n"
+                f"{'='*80}\n"
+                f"File: {src}\n"
                 f"Size: {info['size']} bytes\n"
                 f"Last Modified: {info['last_modified']}\n"
-                f"{'=' * 80}\n\n"
+                f"{'='*80}\n\n"
             )
-            try:
-                with open(src_path, 'r', encoding='utf-8', errors='ignore') as f:
-                    body = f.read()
-            except Exception as e:
-                body = f"Error reading file: {e}"
+
+            if _looks_binary(src):
+                body = "[binary file skipped]\n"
+            else:
+                body = _read_text(src)
 
             annotated = header + body
 
-            # Determine destination path
-            rel = os.path.relpath(src_path, directory)
-            dest_path = os.path.join(output_dir, rel)
-            os.makedirs(os.path.dirname(dest_path), exist_ok=True)
+            # Determine destination
+            if flatten:
+                base = os.path.basename(src)
+                n = dup_counter[base]
+                dup_counter[base] += 1
+                if n:
+                    stem, ext = os.path.splitext(base)
+                    base = f"{stem}_{n}{ext}"
+                dest = os.path.join(output_dir, base)
+            else:
+                rel = os.path.relpath(src, directory)
+                dest = os.path.join(output_dir, rel)
+                os.makedirs(os.path.dirname(dest), exist_ok=True)
 
-            # Write file
-            with open(dest_path, 'w', encoding='utf-8') as out_f:
+            os.makedirs(os.path.dirname(dest), exist_ok=True)
+            with open(dest, "w", encoding="utf-8") as out_f:
                 out_f.write(annotated)
 
     print(f"\nAll files have been split into '{output_dir}/'.")
 
-def main():
-    """Main function to parse arguments and run the script."""
-    parser = argparse.ArgumentParser(description='Concatenate or split files in a directory.')
-    parser.add_argument('directory', nargs='?', default='.', help='Directory to process (default: current directory)')
-    parser.add_argument('-l', '--list-only', action='store_true', help='Only list file paths without content')
-    parser.add_argument('-s', '--split', action='store_true', help='Split each file into its own annotated file')
-    parser.add_argument('--output-dir', default='extracted', help='Folder in which to place split files (default: extracted/)')
 
-    args = parser.parse_args()
+# ─── CLI entrypoint ───────────────────────────────────────────────────────────
+def main():
+    p = argparse.ArgumentParser(
+        description="Concatenate or split files in a directory."
+    )
+    p.add_argument("directory", nargs="?", default=".",
+                   help="Directory to process (default: current dir)")
+    p.add_argument("-l", "--list-only", action="store_true",
+                   help="List file paths only")
+    p.add_argument("-s", "--split", action="store_true",
+                   help="Split each file into its own annotated file")
+    p.add_argument(
+        "-F", "--flatten", action="store_true",
+        help="(with --split) write all output files directly in output dir"
+    )
+    p.add_argument(
+        "--output-dir", default="extracted",
+        help="Destination for split files or dump txt (default: extracted/)"
+    )
+
+    args = p.parse_args()
 
     if args.split:
-        split_files(args.directory, args.output_dir)
+        split_files(args.directory, args.output_dir, flatten=args.flatten)
     else:
         result = concatenate_files(args.directory, args.list_only)
         print(result)
         try:
             pyperclip.copy(result)
-            print(f"\nOutput for directory '{args.directory}' has been copied to clipboard.")
+            print(f"\nOutput copied to clipboard.")
         except pyperclip.PyperclipException:
             pass
 
-if __name__ == '__main__':
+
+if __name__ == "__main__":
     main()
