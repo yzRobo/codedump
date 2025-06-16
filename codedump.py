@@ -19,7 +19,6 @@ def get_file_info(file_path):
             'last_modified': 'N/A'
         }
 
-
 def should_skip(path):
     """Check if the file or directory should be skipped."""
     # List of allowed extensions
@@ -243,19 +242,64 @@ def concatenate_files(directory='.', list_only=False):
 
     return '\n'.join(output)
 
+def split_files(directory='.', output_dir='extracted'):
+    """Recursively write each relevant file into its own annotated file."""
+    for root, dirs, files in os.walk(directory, topdown=True):
+        dirs[:] = [d for d in dirs if not should_skip(os.path.join(root, d))]
+
+        for file in files:
+            src_path = os.path.join(root, file)
+            if should_skip(src_path):
+                continue
+
+            # Build annotated header + content
+            info = get_file_info(src_path)
+            header = (
+                f"{'=' * 80}\n"
+                f"File: {src_path}\n"
+                f"Size: {info['size']} bytes\n"
+                f"Last Modified: {info['last_modified']}\n"
+                f"{'=' * 80}\n\n"
+            )
+            try:
+                with open(src_path, 'r', encoding='utf-8', errors='ignore') as f:
+                    body = f.read()
+            except Exception as e:
+                body = f"Error reading file: {e}"
+
+            annotated = header + body
+
+            # Determine destination path
+            rel = os.path.relpath(src_path, directory)
+            dest_path = os.path.join(output_dir, rel)
+            os.makedirs(os.path.dirname(dest_path), exist_ok=True)
+
+            # Write file
+            with open(dest_path, 'w', encoding='utf-8') as out_f:
+                out_f.write(annotated)
+
+    print(f"\nAll files have been split into '{output_dir}/'.")
+
 def main():
     """Main function to parse arguments and run the script."""
-    parser = argparse.ArgumentParser(description='Concatenate files in a directory.')
+    parser = argparse.ArgumentParser(description='Concatenate or split files in a directory.')
     parser.add_argument('directory', nargs='?', default='.', help='Directory to process (default: current directory)')
     parser.add_argument('-l', '--list-only', action='store_true', help='Only list file paths without content')
+    parser.add_argument('-s', '--split', action='store_true', help='Split each file into its own annotated file')
+    parser.add_argument('--output-dir', default='extracted', help='Folder in which to place split files (default: extracted/)')
 
     args = parser.parse_args()
 
-    result = concatenate_files(args.directory, args.list_only)
-    print(result)
-    pyperclip.copy(result)
-    print(f"\nOutput for directory '{args.directory}' has been copied to clipboard.")
-
+    if args.split:
+        split_files(args.directory, args.output_dir)
+    else:
+        result = concatenate_files(args.directory, args.list_only)
+        print(result)
+        try:
+            pyperclip.copy(result)
+            print(f"\nOutput for directory '{args.directory}' has been copied to clipboard.")
+        except pyperclip.PyperclipException:
+            pass
 
 if __name__ == '__main__':
     main()
